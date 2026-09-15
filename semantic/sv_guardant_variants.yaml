@@ -1,0 +1,342 @@
+name: sv_guardant_variants
+description: >
+  Governed semantic layer over the synthetic liquid-biopsy cohort. One
+  authoritative definition of reportable call, actionable finding, and tumour
+  fraction for SQL, BI and AI consumers.
+
+  This file is the source of truth. It is deployed with
+  SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML and can be exported back out of the
+  running object with SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW, so the object in the
+  account and the file in git are the same artifact.
+
+  SYNTHETIC DATA. No Guardant patient data is used anywhere in this model.
+
+tables:
+  - name: patients
+    description: One row per patient in the cohort.
+    base_table:
+      database: DEMO
+      schema: GUARDANT_DEMO
+      table: PATIENTS
+    primary_key:
+      columns: [PATIENT_ID]
+    dimensions:
+      - name: patient_id
+        description: Synthetic patient identifier.
+        expr: PATIENT_ID
+        data_type: VARCHAR
+      - name: cancer_type
+        synonyms: ["tumour type", "tumor type", "indication", "disease"]
+        description: Primary cancer type at enrollment.
+        expr: PRIMARY_CANCER_TYPE
+        data_type: VARCHAR
+        is_enum: true
+      - name: stage
+        synonyms: ["stage at diagnosis", "disease stage"]
+        description: Stage at diagnosis, I through IV.
+        expr: STAGE_AT_DIAGNOSIS
+        data_type: VARCHAR
+        is_enum: true
+      - name: sex
+        expr: SEX
+        data_type: VARCHAR
+        is_enum: true
+      - name: smoking_history
+        synonyms: ["smoker status"]
+        expr: SMOKING_HISTORY
+        data_type: VARCHAR
+        is_enum: true
+    time_dimensions:
+      - name: enrollment_date
+        description: Date the patient entered the cohort.
+        expr: ENROLLMENT_DATE
+        data_type: DATE
+    metrics:
+      - name: patient_count
+        synonyms: ["number of patients", "how many patients"]
+        description: Distinct patients.
+        expr: COUNT(DISTINCT PATIENT_ID)
+
+  - name: specimens
+    description: One row per blood draw. Patients are drawn serially over time.
+    base_table:
+      database: DEMO
+      schema: GUARDANT_DEMO
+      table: SPECIMENS
+    primary_key:
+      columns: [SPECIMEN_ID]
+    dimensions:
+      - name: specimen_id
+        expr: SPECIMEN_ID
+        data_type: VARCHAR
+      - name: assay
+        synonyms: ["panel", "test", "test type"]
+        description: Which assay was run on the draw.
+        expr: ASSAY
+        data_type: VARCHAR
+        is_enum: true
+      - name: qc_status
+        synonyms: ["quality control", "QC"]
+        description: PASS, REVIEW or FAIL. Only PASS specimens are reportable.
+        expr: QC_STATUS
+        data_type: VARCHAR
+        is_enum: true
+      - name: lab_site
+        synonyms: ["laboratory", "site", "lab"]
+        expr: LAB_SITE
+        data_type: VARCHAR
+        is_enum: true
+      - name: draw_number
+        description: Sequence of this draw for the patient, 1 being the first.
+        expr: DRAW_NUMBER
+        data_type: NUMBER
+      - name: qc_passed
+        description: Boolean filter for reportable specimens only.
+        expr: QC_STATUS = 'PASS'
+        data_type: BOOLEAN
+        labels:
+          - filter
+    time_dimensions:
+      - name: collection_date
+        description: Date the blood was drawn.
+        expr: COLLECTION_DATE
+        data_type: DATE
+    facts:
+      - name: f_tumor_fraction
+        description: Estimated circulating tumour fraction for this draw.
+        expr: TUMOR_FRACTION
+        data_type: NUMBER
+      - name: f_ctdna_input_ng
+        description: Nanograms of cell-free DNA input.
+        expr: CTDNA_INPUT_NG
+        data_type: NUMBER
+      - name: f_mean_depth
+        expr: MEAN_DEPTH
+        data_type: NUMBER
+    metrics:
+      - name: specimen_count
+        synonyms: ["number of draws", "blood draws", "how many specimens"]
+        description: Distinct blood draws.
+        expr: COUNT(DISTINCT SPECIMEN_ID)
+      - name: avg_tumor_fraction_pct
+        synonyms: ["tumour fraction", "tumor fraction", "ctDNA fraction"]
+        description: >
+          Mean circulating tumour fraction, as a percentage. Low tumour fraction
+          is the dominant driver of assay sensitivity, so this is the number to
+          check before reading anything into a negative result.
+        expr: AVG(TUMOR_FRACTION) * 100
+      - name: qc_pass_rate_pct
+        synonyms: ["QC pass rate", "quality pass rate"]
+        description: Share of draws passing QC, as a percentage.
+        expr: SUM(CASE WHEN QC_STATUS = 'PASS' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)
+
+  - name: gene_panel
+    description: The assay's gene panel, with targeted-therapy annotation.
+    base_table:
+      database: DEMO
+      schema: GUARDANT_DEMO
+      table: GENE_PANEL
+    primary_key:
+      columns: [GENE_SYMBOL]
+    dimensions:
+      - name: gene
+        synonyms: ["gene symbol", "gene name"]
+        expr: GENE_SYMBOL
+        data_type: VARCHAR
+      - name: targeted_therapy
+        synonyms: ["therapy", "drug", "treatment"]
+        description: Named agents associated with alterations in this gene.
+        expr: TARGETED_THERAPY
+        data_type: VARCHAR
+      - name: is_actionable
+        synonyms: ["actionable", "targetable", "has a therapy"]
+        description: Whether an alteration in this gene has an associated therapy.
+        expr: IS_ACTIONABLE
+        data_type: BOOLEAN
+        labels:
+          - filter
+    metrics:
+      - name: genes_on_panel
+        description: Distinct genes on the panel.
+        expr: COUNT(DISTINCT GENE_SYMBOL)
+
+  - name: variants
+    description: >
+      Raw variant calls, one row per call per specimen, before filtering.
+      Roughly 20 million rows. The noise floor is included deliberately, which
+      is why call_filter matters in almost every question.
+    base_table:
+      database: DEMO
+      schema: GUARDANT_DEMO
+      table: VARIANT_CALLS
+    primary_key:
+      columns: [VARIANT_CALL_ID]
+    dimensions:
+      - name: gene
+        synonyms: ["gene symbol", "mutated gene"]
+        expr: GENE_SYMBOL
+        data_type: VARCHAR
+      - name: chromosome
+        expr: CHROMOSOME
+        data_type: VARCHAR
+        is_enum: true
+      - name: variant_type
+        synonyms: ["alteration type", "mutation type"]
+        description: SNV, insertion, deletion or MNV.
+        expr: VARIANT_TYPE
+        data_type: VARCHAR
+        is_enum: true
+      - name: consequence
+        synonyms: ["effect", "molecular consequence"]
+        description: Predicted effect, for example missense_variant.
+        expr: CONSEQUENCE
+        data_type: VARCHAR
+        is_enum: true
+      - name: clinical_significance
+        synonyms: ["pathogenicity", "significance"]
+        description: Pathogenic through benign.
+        expr: CLINICAL_SIGNIFICANCE
+        data_type: VARCHAR
+        is_enum: true
+      - name: call_filter
+        synonyms: ["filter status", "filter"]
+        description: >
+          PASS, or the reason the call was filtered out: low_mapq, low_depth,
+          low_vaf, low_alt_reads.
+        expr: CALL_FILTER
+        data_type: VARCHAR
+        is_enum: true
+      - name: is_reportable
+        description: >
+          Boolean filter for calls that survived the noise filter. This is the
+          single definition of "reportable" for every consumer of this model.
+        expr: CALL_FILTER = 'PASS'
+        data_type: BOOLEAN
+        labels:
+          - filter
+    facts:
+      - name: f_vaf
+        description: Variant allele frequency, 0 to 1.
+        expr: VAF
+        data_type: NUMBER
+      - name: f_read_depth
+        expr: READ_DEPTH
+        data_type: NUMBER
+      - name: f_alt_read_count
+        expr: ALT_READ_COUNT
+        data_type: NUMBER
+      - name: f_mapping_quality
+        expr: MAPPING_QUALITY
+        data_type: NUMBER
+      - name: f_is_pass
+        description: Internal helper for rate calculations.
+        expr: CASE WHEN CALL_FILTER = 'PASS' THEN 1 ELSE 0 END
+        data_type: NUMBER
+        access_modifier: private_access
+    metrics:
+      - name: total_calls
+        synonyms: ["number of calls", "how many variant calls", "call volume"]
+        description: All variant calls, including filtered noise.
+        expr: COUNT(*)
+      - name: reportable_calls
+        synonyms: ["reportable variants", "passing calls", "PASS calls"]
+        description: >
+          Calls that survived the noise filter. THE definition of a reportable
+          call: call_filter = 'PASS'. Use this rather than re-deriving it.
+        expr: SUM(CASE WHEN CALL_FILTER = 'PASS' THEN 1 ELSE 0 END)
+      - name: pass_rate_pct
+        synonyms: ["filter pass rate", "signal rate"]
+        description: Share of raw calls that are reportable, as a percentage.
+        expr: SUM(CASE WHEN CALL_FILTER = 'PASS' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)
+      - name: median_vaf_pct
+        synonyms: ["VAF", "allele frequency", "variant allele frequency"]
+        description: Median variant allele frequency, as a percentage.
+        expr: MEDIAN(VAF) * 100
+      - name: max_vaf_pct
+        description: Highest variant allele frequency, as a percentage. A proxy for clonality.
+        expr: MAX(VAF) * 100
+      - name: avg_read_depth
+        synonyms: ["coverage", "depth"]
+        expr: AVG(READ_DEPTH)
+      - name: genes_altered
+        synonyms: ["distinct genes mutated", "number of genes altered"]
+        expr: COUNT(DISTINCT GENE_SYMBOL)
+
+relationships:
+  - name: specimens_to_patients
+    left_table: specimens
+    right_table: patients
+    relationship_columns:
+      - left_column: PATIENT_ID
+        right_column: PATIENT_ID
+
+  - name: variants_to_specimens
+    left_table: variants
+    right_table: specimens
+    relationship_columns:
+      - left_column: SPECIMEN_ID
+        right_column: SPECIMEN_ID
+
+  - name: variants_to_gene_panel
+    left_table: variants
+    right_table: gene_panel
+    relationship_columns:
+      - left_column: GENE_SYMBOL
+        right_column: GENE_SYMBOL
+
+metrics:
+  - name: reportable_calls_per_specimen
+    synonyms: ["calls per draw", "yield per specimen"]
+    description: >
+      Mean reportable calls per blood draw. The headline assay-yield number:
+      it falls as tumour fraction falls, which is the relationship worth
+      showing to anyone interpreting a negative result.
+    expr: variants.reportable_calls / specimens.specimen_count
+    access_modifier: public_access
+
+module_custom_instructions:
+  sql_generation: |
+    Round percentages to 2 decimal places.
+    Unless the user explicitly asks about noise, filtered calls, or QC failures,
+    restrict to reportable calls (variants.call_filter = 'PASS') and specimens
+    that passed QC (specimens.qc_status = 'PASS'). Say so in the answer when
+    you apply that restriction.
+    "Actionable" always means gene_panel.is_actionable is TRUE.
+  question_categorization: |
+    This model contains synthetic research data only. If a question asks for
+    clinical guidance, diagnosis, or treatment advice for an individual
+    patient, decline and state that this is a synthetic dataset that must not
+    be used clinically.
+    If a question asks about a named real person, decline.
+
+verified_queries:
+  - name: actionable_patients_by_cancer_type
+    question: How many patients have an actionable alteration, by cancer type?
+    use_as_onboarding_question: true
+    sql: |
+      SELECT * FROM SEMANTIC_VIEW(
+        DEMO.GUARDANT_DEMO.sv_guardant_variants
+        DIMENSIONS patients.cancer_type
+        METRICS patients.patient_count, variants.reportable_calls
+        WHERE variants.is_reportable AND gene_panel.is_actionable
+      ) ORDER BY 2 DESC
+
+  - name: mutation_burden_by_gene
+    question: Which genes are most frequently altered?
+    use_as_onboarding_question: true
+    sql: |
+      SELECT * FROM SEMANTIC_VIEW(
+        DEMO.GUARDANT_DEMO.sv_guardant_variants
+        DIMENSIONS variants.gene
+        METRICS variants.reportable_calls, variants.median_vaf_pct
+      ) ORDER BY 2 DESC LIMIT 15
+
+  - name: yield_vs_tumor_fraction
+    question: How does assay yield relate to tumour fraction across lab sites?
+    sql: |
+      SELECT * FROM SEMANTIC_VIEW(
+        DEMO.GUARDANT_DEMO.sv_guardant_variants
+        DIMENSIONS specimens.lab_site
+        METRICS specimens.avg_tumor_fraction_pct, reportable_calls_per_specimen,
+                specimens.qc_pass_rate_pct
+      ) ORDER BY 1
