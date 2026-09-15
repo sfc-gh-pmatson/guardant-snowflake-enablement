@@ -233,6 +233,15 @@ specimens = session.table("SPECIMENS")
 patients  = session.table("PATIENTS")
 panel     = session.table("GENE_PANEL")
 
+# Project the panel with a distinct join key. Joining two DataFrames that both
+# carry GENE_SYMBOL leaves that name ambiguous downstream, so rename it once
+# here rather than disambiguating at every later reference.
+panel_lookup = panel.select(
+    F.col("GENE_SYMBOL").alias("PANEL_GENE"),
+    "IS_ACTIONABLE",
+    "TARGETED_THERAPY",
+)
+
 print(f"VARIANT_CALLS rows: {variants.count():,}")"""),
 
     md("md_lazy", """### Proof that it is lazy
@@ -259,8 +268,8 @@ Per-gene statistics over the full raw table, no pre-filtering. On a laptop this 
 
 gene_stats = (
     variants
-    .join(panel, variants["GENE_SYMBOL"] == panel["GENE_SYMBOL"])
-    .group_by(variants["GENE_SYMBOL"], panel["IS_ACTIONABLE"])
+    .join(panel_lookup, variants["GENE_SYMBOL"] == panel_lookup["PANEL_GENE"])
+    .group_by("GENE_SYMBOL", "IS_ACTIONABLE")
     .agg(
         F.count("*").alias("TOTAL_CALLS"),
         F.sum(F.iff(F.col("CALL_FILTER") == "PASS", 1, 0)).alias("PASS_CALLS"),
@@ -376,7 +385,7 @@ ORDER BY confidence DESC;"""),
     py("py_writeback", """cohort = (
     variants
     .filter(F.col("CALL_FILTER") == "PASS")
-    .join(panel, variants["GENE_SYMBOL"] == panel["GENE_SYMBOL"])
+    .join(panel_lookup, variants["GENE_SYMBOL"] == panel_lookup["PANEL_GENE"])
     .filter(F.col("IS_ACTIONABLE") & (F.col("VAF") >= 0.05))
     .join(specimens, on="SPECIMEN_ID")
     .filter(F.col("QC_STATUS") == "PASS")
@@ -384,8 +393,8 @@ ORDER BY confidence DESC;"""),
     .select(
         "PATIENT_ID", "SPECIMEN_ID", "PRIMARY_CANCER_TYPE", "STAGE_AT_DIAGNOSIS",
         "COLLECTION_DATE", "ASSAY", "TUMOR_FRACTION",
-        variants["GENE_SYMBOL"].alias("GENE_SYMBOL"),
-        "CONSEQUENCE", "VAF", "READ_DEPTH", "CLINICAL_SIGNIFICANCE", "TARGETED_THERAPY",
+        "GENE_SYMBOL", "CONSEQUENCE", "VAF", "READ_DEPTH",
+        "CLINICAL_SIGNIFICANCE", "TARGETED_THERAPY",
     )
 )
 
