@@ -22,6 +22,14 @@
    A fine-grained or classic PAT with read access to the repo is sufficient.
    ------------------------------------------------------------------------
 
+   THIS REPO IS PUBLIC, so the credential is optional. If you would rather not
+   create a secret at all, skip step 1 and drop both the
+   ALLOWED_AUTHENTICATION_SECRETS clause and the GIT_CREDENTIALS clause below —
+   Snowflake can fetch a public repo anonymously. The secret is kept here as the
+   default because it is what you need for any private repo, which is the more
+   common real-world case and the one worth showing the customer.
+   ------------------------------------------------------------------------
+
    NOTE ON WORKSPACES: these objects give Snowflake read access to the repo and
    let you deploy notebooks from it (see 04_deploy_notebooks.sql). A git-backed
    *Workspace* — the thing you demo in the GitHub segment — can only be created
