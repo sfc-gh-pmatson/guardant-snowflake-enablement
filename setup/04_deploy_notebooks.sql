@@ -8,9 +8,15 @@
    story being told in the GitHub segment of the session: the repo is the source
    of truth, Snowflake fetches from it.
 
-   After a `git push`, refresh a notebook with:
+   After a `git push`, refresh a notebook. Note that ADD LIVE VERSION fails with
+   "There is already a live version" unless you drop the existing one first:
+
        ALTER GIT REPOSITORY GUARDANT_ENABLEMENT_REPO FETCH;
+       ALTER NOTEBOOK <name> DROP LIVE VERSION;
        ALTER NOTEBOOK <name> ADD LIVE VERSION FROM LAST;
+
+   Re-running the CREATE OR REPLACE below achieves the same thing and is the
+   simpler option if you have just pushed changes to several notebooks.
    ============================================================================ */
 
 USE ROLE ACCOUNTADMIN;

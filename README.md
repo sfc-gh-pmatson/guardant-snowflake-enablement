@@ -77,13 +77,28 @@ All three scripts are idempotent — re-running gives a fresh randomised dataset
 
 ## Verifying before you present
 
+Two layers, both worth running the morning of the session.
+
+**SQL cells** — executes every SQL cell in all three notebooks and reports
+pass/fail per cell:
+
 ```bash
 python3 tools/verify_sql_cells.py
 ```
 
-This executes **every** SQL cell in all three notebooks against the account and
-reports pass/fail per cell. Run it the morning of the session: a notebook that
-only looks right is worthless in front of a customer.
+**Whole notebooks, including the Python cells** — runs them headlessly in
+Snowflake, which is the only way to catch Snowpark errors:
+
+```sql
+EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_01_NOTEBOOKS();
+EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_02_SNOWPARK();
+EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_03_CORTEX_AI();
+```
+
+All three currently pass end to end. Notebook 3 makes real Cortex calls, so it
+consumes a small amount of AI credit.
+
+A notebook that only looks right is worthless in front of a customer.
 
 If you edit notebook content, edit `tools/build_notebooks.py` and regenerate:
 
@@ -93,6 +108,12 @@ python3 tools/build_notebooks.py
 
 Cell content lives as plain text in that script, which keeps it reviewable in
 diffs and means a mangled `.ipynb` JSON blob is always recoverable.
+
+After pushing notebook changes, redeploy so Snowflake picks them up:
+
+```bash
+snow sql -c <connection> --role ACCOUNTADMIN -f setup/04_deploy_notebooks.sql
+```
 
 ## Session flow
 
