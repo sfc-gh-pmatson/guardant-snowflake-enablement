@@ -1,9 +1,15 @@
 # Guardant Health — Snowflake Enablement Session
 
-Demo assets for the in-person walkthrough with the Guardant Health bioinformatics
+Demo assets for the in-person session with the Guardant Health bioinformatics
 and data science team.
 
 **Session:** Thursday 17 September 2026, 11:00–12:00 PDT (1 hour, in person)
+**Format:** hands-on — six participants work through it themselves, in Guardant's
+own Snowflake account.
+
+> **Running the hands-on lab?** Start at **[`lab/PREREQUISITES.md`](lab/PREREQUISITES.md)**,
+> then **[`lab/FACILITATOR_RUNBOOK.md`](lab/FACILITATOR_RUNBOOK.md)**.
+> Participants get **[`lab/PARTICIPANT_GUIDE.md`](lab/PARTICIPANT_GUIDE.md)**.
 
 ## The problem we are addressing
 
@@ -17,14 +23,25 @@ Every asset here demonstrates the same workload running *inside* the platform.
 ## What is in here
 
 ```
+lab/                        HANDS-ON LAB (participants run this themselves)
+  PREREQUISITES.md          what Guardant IT must confirm and grant — start here
+  00_preflight_check.sql    read-only: privileges, Cortex, Notebooks, git egress
+  01_admin_setup.sql        lab role, warehouse, per-participant schemas
+  02_participant_setup.sql  each attendee runs this at their own keyboard
+  PARTICIPANT_GUIDE.md      the six stations, for attendees
+  FACILITATOR_RUNBOOK.md    your script: timings, cut points, live triage
+  99_rehearsal_shortcut.sql stand the lab up in your own account to rehearse
 setup/
   00_setup.sql              database, schema, warehouse, stage
   01_synthetic_data.sql     generates the entire dataset (~20M rows)
   02_udf.sql                pre-seeds the variant confidence UDF
+  03_git_integration.sql    secret / API integration / git repository
+  04_deploy_notebooks.sql   creates the notebooks from this git repo
 notebooks/
-  01_snowflake_notebooks.ipynb      "your Jupyter, but in Snowflake"
-  02_snowpark_at_scale.ipynb        Python DataFrames at 20M rows
-  03_cortex_ai_clinical_text.ipynb  LLM functions over pathology narratives
+  00_lab_workbook.ipynb             HANDS-ON: all six stations, one notebook
+  01_snowflake_notebooks.ipynb      demo: "your Jupyter, but in Snowflake"
+  02_snowpark_at_scale.ipynb        demo: Python DataFrames at 20M rows
+  03_cortex_ai_clinical_text.ipynb  demo: LLM functions over pathology narratives
   environment.yml                   notebook package requirements
 dashboards/
   snowsight_dashboard_queries.sql   six tiles for the Snowsight segment
@@ -32,6 +49,13 @@ tools/
   build_notebooks.py        regenerates the .ipynb files from plain text
   verify_sql_cells.py       executes every SQL cell and reports failures
 ```
+
+### Demo notebooks vs the lab workbook
+
+Both are here on purpose. `notebooks/01`–`03` are paced for **you** driving while
+people watch. `notebooks/00_lab_workbook.ipynb` is paced for **them** typing:
+one notebook instead of three, a checkpoint at every station, and an escape cell
+so falling behind on one topic never blocks the next.
 
 ## The data
 
