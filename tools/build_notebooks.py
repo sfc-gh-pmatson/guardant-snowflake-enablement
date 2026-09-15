@@ -655,18 +655,29 @@ Put your hand up whenever something does not work. That is what the session is f
     md("md_s0", """---
 ## Station 0 — Where am I?
 
-Confirms you are pointed at your own schema and can see the shared data."""),
+Confirms you are pointed at your own schema and can see the shared data.
 
-    sql("sql_s0", """USE ROLE GUARDANT_LAB;
-USE WAREHOUSE GUARDANT_LAB_WH;
+This one is Python rather than SQL for a mundane reason: a notebook SQL cell will
+not accept `SET x = <expression>`, so we work the schema name out in Python and
+set the session context from there."""),
 
-SET my_schema = 'GUARDANT_LAB.LAB_'
-                || UPPER(REGEXP_REPLACE(CURRENT_USER(), '[^A-Za-z0-9]', '_'));
-USE SCHEMA IDENTIFIER($my_schema);
+    py("py_s0", """import re
+from snowflake.snowpark.context import get_active_session
 
-SELECT CURRENT_USER() AS you,
-       CURRENT_SCHEMA() AS your_private_schema,
-       (SELECT COUNT(*) FROM GUARDANT_LAB.GUARDANT_DEMO.VARIANT_CALLS) AS shared_variant_calls;"""),
+session = get_active_session()
+
+session.sql("USE ROLE GUARDANT_LAB").collect()
+session.sql("USE WAREHOUSE GUARDANT_LAB_WH").collect()
+
+me = session.sql("SELECT CURRENT_USER()").collect()[0][0]
+my_schema = "GUARDANT_LAB.LAB_" + re.sub(r"[^A-Za-z0-9]", "_", me).upper()
+session.sql(f"USE SCHEMA {my_schema}").collect()
+
+shared_rows = session.table("GUARDANT_LAB.GUARDANT_DEMO.VARIANT_CALLS").count()
+
+print(f"You:                  {me}")
+print(f"Your private schema:  {my_schema}")
+print(f"Shared variant calls: {shared_rows:,}")"""),
 
     md("md_s0_check", """**CHECKPOINT** — `your_private_schema` contains your username, and
 `shared_variant_calls` is **20,000,000**.
