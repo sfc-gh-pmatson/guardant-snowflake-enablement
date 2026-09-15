@@ -3,13 +3,15 @@
 Demo assets for the in-person session with the Guardant Health bioinformatics
 and data science team.
 
-**Session:** Thursday 17 September 2026, 11:00–12:00 PDT (1 hour, in person)
-**Format:** hands-on — six participants work through it themselves, in Guardant's
-own Snowflake account.
+**Session:** Thursday 17 September 2026, 11:00–12:00 PDT (in person)
+**Format:** eight-segment developer surface tour — Peter drives throughout.
 
-> **Running the hands-on lab?** Start at **[`lab/PREREQUISITES.md`](lab/PREREQUISITES.md)**,
-> then **[`lab/FACILITATOR_RUNBOOK.md`](lab/FACILITATOR_RUNBOOK.md)**.
-> Participants get **[`lab/PARTICIPANT_GUIDE.md`](lab/PARTICIPANT_GUIDE.md)**.
+> **Running the session?** Start at **[`demo/runbook.md`](demo/runbook.md)**, then
+> run **[`demo/demo.sql`](demo/demo.sql)** top to bottom.
+> Build everything first with **[`demo/build.sql`](demo/build.sql)**.
+>
+> **Want a hands-on lab instead?** `lab/` is a complete self-serve lab, kept as a
+> take-home. See [`lab/PREREQUISITES.md`](lab/PREREQUISITES.md).
 
 ## The problem we are addressing
 
@@ -23,39 +25,63 @@ Every asset here demonstrates the same workload running *inside* the platform.
 ## What is in here
 
 ```
-lab/                        HANDS-ON LAB (participants run this themselves)
-  PREREQUISITES.md          what Guardant IT must confirm and grant — start here
-  00_preflight_check.sql    read-only: privileges, Cortex, Notebooks, git egress
+demo/                       THE SESSION (Peter drives, 8 segments)
+  runbook.md                talk track, timings, cut order, triage — start here
+  build.sql                 creates every object, with a VERIFY section
+  demo.sql                  run top to bottom during the session
+  teardown.sql              suspend / remove (compute pools cost money)
+semantic/
+  sv_guardant_variants.yaml the semantic view, as a versioned file
+model/
+  variant_clf.joblib        the trained model, committed for segment 8
+tools/
+  train_and_register_model.py  train locally, log to the Model Registry
+  deploy_semantic_view.py      deploy the semantic view from its YAML
+  build_notebooks.py           regenerates the .ipynb files from plain text
+  verify_sql_cells.py          executes every notebook SQL cell
+lab/                        TAKE-HOME hands-on lab (not used live)
+  PREREQUISITES.md          what an admin must confirm and grant
+  00_preflight_check.sql    read-only readiness check
   01_admin_setup.sql        lab role, warehouse, per-participant schemas
-  02_participant_setup.sql  each attendee runs this at their own keyboard
-  PARTICIPANT_GUIDE.md      the six stations, for attendees
-  FACILITATOR_RUNBOOK.md    your script: timings, cut points, live triage
-  99_rehearsal_shortcut.sql stand the lab up in your own account to rehearse
+  02_participant_setup.sql  what each attendee runs
+  PARTICIPANT_GUIDE.md      the six stations
+  FACILITATOR_RUNBOOK.md    lab facilitation notes
+  99_rehearsal_shortcut.sql stand the lab up in your own account
 setup/
   00_setup.sql              database, schema, warehouse, stage
   01_synthetic_data.sql     generates the entire dataset (~20M rows)
-  02_udf.sql                pre-seeds the variant confidence UDF
+  02_udf.sql                variant confidence UDF
   03_git_integration.sql    secret / API integration / git repository
   04_deploy_notebooks.sql   creates the notebooks from this git repo
 notebooks/
-  00_lab_workbook.ipynb             HANDS-ON: all six stations, one notebook
-  01_snowflake_notebooks.ipynb      demo: "your Jupyter, but in Snowflake"
-  02_snowpark_at_scale.ipynb        demo: Python DataFrames at 20M rows
-  03_cortex_ai_clinical_text.ipynb  demo: LLM functions over pathology narratives
-  environment.yml                   notebook package requirements
+  00_lab_workbook.ipynb             hands-on: all six lab stations
+  01_snowflake_notebooks.ipynb      used in segment 3
+  02_snowpark_at_scale.ipynb        Python DataFrames at 20M rows
+  03_cortex_ai_clinical_text.ipynb  LLM functions over pathology narratives
 dashboards/
-  snowsight_dashboard_queries.sql   six tiles for the Snowsight segment
-tools/
-  build_notebooks.py        regenerates the .ipynb files from plain text
-  verify_sql_cells.py       executes every SQL cell and reports failures
+  snowsight_dashboard_queries.sql   six Snowsight tiles
 ```
 
-### Demo notebooks vs the lab workbook
+### The eight segments
 
-Both are here on purpose. `notebooks/01`–`03` are paced for **you** driving while
-people watch. `notebooks/00_lab_workbook.ipynb` is paced for **them** typing:
-one notebook instead of three, a checkpoint at every station, and an escape cell
-so falling behind on one topic never blocks the next.
+| # | Segment | Budget |
+|---|---|---|
+| 1 | Snowflake overview, CoCo and CoCo Desktop | 8 min |
+| 2 | Claude Code plugin + VS Code extension | 5 min |
+| 3 | Notebooks, including creating a compute pool | 9 min |
+| 4 | Snowflake-Labs GitHub, git repository objects | 6 min |
+| 5 | Local model → Model Registry → inference in Snowflake | 12 min |
+| 6 | Semantic view over the data | 8 min |
+| 7 | Cortex Agent on the semantic view, shared to a role | 8 min |
+| 8 | Commit the YAML and model, redeploy from git | 10 min |
+
+### The GitOps loop
+
+`semantic/sv_guardant_variants.yaml` is the source of truth for the semantic view.
+It deploys with `SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML` and exports back out of the
+running object with `SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW`, so the file in git and
+the object in the account are the same artifact. Redeploying it into a second schema
+returns byte-identical numbers, which is the proof.
 
 ## The data
 

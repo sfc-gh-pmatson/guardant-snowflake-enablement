@@ -322,27 +322,42 @@ LS @DEMO.GUARDANT_DEMO.GUARDANT_ENABLEMENT_REPO/branches/main/model/;
 
 -- 8b. Redeploy the semantic view FROM THE COMMITTED FILE into a different
 --     schema. Same YAML, new object — which is the proof that the file, not
---     the click-path, is the source of truth.
---     Run the notebook cell in GUARDANT_08_GITOPS, or from your laptop:
+--     the click-path, is the source of truth. Run from your laptop:
 --       .venv-ml/bin/python tools/deploy_semantic_view.py \
 --            --schema DEMO.GUARDANT_GITOPS
 --     MEASURED: "Semantic view was successfully created."
 SHOW SEMANTIC VIEWS IN SCHEMA DEMO.GUARDANT_GITOPS;
+
+--     And it returns identical numbers to the original, from the same file.
+--     VERIFIED: PALO-ALTO 98.616269 / REDWOOD-CITY 98.597465 / SAN-DIEGO 98.570595
+--               — byte-identical to segment 6c.
+SELECT * FROM SEMANTIC_VIEW(
+  DEMO.GUARDANT_GITOPS.sv_guardant_variants
+  DIMENSIONS specimens.lab_site
+  METRICS reportable_calls_per_specimen
+) ORDER BY lab_site;
 
 -- 8c. The round trip. Export the running object back to YAML and diff it
 --     against the file in git. This is what makes it version control rather
 --     than a one-way export.
 SELECT SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW('DEMO.GUARDANT_DEMO.SV_GUARDANT_VARIANTS') AS yaml_from_object;
 
--- 8d. The model, loaded from the repo rather than from a laptop. Open
---     GUARDANT_08_GITOPS in Snowsight and run it: it reads
---     model/variant_clf.joblib off the git stage, asserts the scikit-learn
---     version matches, and registers it as a new version.
+-- 8d. ⚠ NOT BUILT — the model-from-git-stage notebook.
+--     The intent is a notebook that reads model/variant_clf.joblib off the git
+--     stage, asserts the scikit-learn version, and registers it as a new
+--     version — closing the loop without a laptop in the path.
 --
---  THE VERSION TRAP, worth saying: joblib.load needs compatible scikit-learn
---  between where the model was written and where it is read. We pin 1.5.2
---  locally BECAUSE Snowflake's channel has 1.5.2. Mismatch here can fail
---  loudly or, worse, quietly.
+--     BE HONEST ABOUT THIS if you show it: the artifact IS committed and IS
+--     visible to Snowflake as a stage file (verified: 133,021 bytes on the
+--     stage above). What is not built is the notebook that reads it back in.
+--     Describe the path, show the file on the stage, and do not pretend to
+--     run it.
+--
+--  THE VERSION TRAP, worth saying either way: joblib.load needs compatible
+--  scikit-learn between where the model was written and where it is read. We
+--  pin 1.5.2 locally BECAUSE Snowflake's channel has 1.5.2 — and
+--  snowflake-ml-python 1.9.2 requires <1.6, which is how that pin was chosen.
+--  Mismatch here can fail loudly or, worse, quietly.
 SHOW VERSIONS IN MODEL DEMO.GUARDANT_DEMO.GUARDANT_VARIANT_CLF;
 
 --  CLOSE ON THEIR WORKFLOW, not the product list:
