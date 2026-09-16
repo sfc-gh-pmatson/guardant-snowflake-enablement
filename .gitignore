@@ -3,3 +3,13 @@ __pycache__/
 .DS_Store
 .ipynb_checkpoints/
 *.local.sql
+
+# Local virtualenv for the ML tooling (see demo/runbook.md)
+.venv-ml/
+
+# Models trained locally and deliberately NOT committed.
+# Part 5 shows two paths: model/variant_clf.joblib IS committed, to demonstrate
+# git as the handoff boundary. Anything matching *_local.joblib goes straight
+# from the laptop to the Model Registry instead, which is the everyday path.
+# The registry is the artifact store; git is for code and definitions.
+model/*_local.joblib
