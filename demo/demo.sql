@@ -94,6 +94,12 @@ CREATE COMPUTE POOL IF NOT EXISTS GUARDANT_DEMO_POOL_THROWAWAY
 -- STARTING -> ACTIVE. Point at instance_family and auto_suspend_secs.
 SHOW COMPUTE POOLS LIKE 'GUARDANT_%';
 
+-- External Access Integration: allow notebooks / SPCS to pip-install from PyPI
+-- CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION guardant_pypi_access
+--   ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)
+--   ENABLED = true;
+
+
 -- 3b. Now open the notebook in Snowsight (it runs on the PRE-WARMED pool):
 --       Projects -> Notebooks -> GUARDANT_01_NOTEBOOKS
 --     Run the first few cells. The moment worth pausing on is the SQL cell
