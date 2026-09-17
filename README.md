@@ -58,6 +58,7 @@ notebooks/
   02_snowpark_at_scale.ipynb             Python DataFrames over 20M rows
   03_cortex_ai_clinical_text.ipynb       LLM functions over pathology narratives
   04_train_register_in_snowflake.ipynb   train + register a model, no laptop
+  05_register_model_from_git.ipynb       register a git-committed model
   environment.yml                        notebook packages
 semantic/
   sv_guardant_variants.yaml       the semantic view as a versioned file
@@ -86,10 +87,14 @@ them stands alone.
    `AI_AGG` over free-text pathology narratives, without calling an external API.
 4. **Train and register a model** — trains inside Snowflake and logs the result to
    the Model Registry, so the training data never moves.
+5. **Register a model from git** — the counterpart: Snowflake fetches an existing
+   `.joblib` off the git repository stage and registers it, with nothing uploaded
+   from a laptop.
 
-Notebook 4 runs on **container runtime** because `snowflake-ml-python` is already
-present there — a notebook created from git cannot select packages from the
-Snowsight dropdown for you.
+Notebooks 4 and 5 run on **container runtime** because `snowflake-ml-python` is
+already present there — a notebook created from git cannot select packages from the
+Snowsight dropdown for you. The working runtime configuration is recorded in
+`.snowflake/settings.json` (currently Python 3.12, runtime V2.9-CPU).
 
 ## Deploying models
 
@@ -97,8 +102,8 @@ Three routes reach the registry, and the repo shows all of them:
 
 | | Where training runs | How the model reaches the registry |
 |---|---|---|
-| **A — via git** | Your machine | Committed here; Snowflake pulls it off the git stage |
-| **B — from your laptop** | Your machine | `log_model` pushes it directly |
+| **A — via git** | Your machine | Committed here; Snowflake pulls it off the git stage (notebook 5) |
+| **B — from your laptop** | Your machine | `log_model` pushes it directly (`tools/deploy_local_model.py`) |
 | **C — notebook 4** | Snowflake | Never leaves the platform |
 
 ### The recommended path

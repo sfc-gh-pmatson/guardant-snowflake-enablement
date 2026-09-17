@@ -50,6 +50,26 @@ CREATE COMPUTE POOL IF NOT EXISTS GUARDANT_NOTEBOOK_POOL
 -- CREATE COMPUTE POOL round trip. It is not needed to stand this environment up.
 
 -- ---------------------------------------------------------------------
+-- 4b. Letting notebooks install packages from PyPI
+--
+--   Two mutually exclusive options. Pick one.
+--
+--   (a) Artifact repository — the simpler path, and what this environment
+--       actually uses. Nothing to create; grant the role and select it in the
+--       notebook's Packages panel:
+--         SNOWFLAKE.SNOWPARK.PYPI_SHARED_REPOSITORY
+--       The role needs the SNOWFLAKE.PYPI_REPOSITORY_USER database role.
+--
+--   (b) External access integration — needed for a private index or a mirror:
+--         CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION guardant_pypi_access
+--           ALLOWED_NETWORK_RULES = (snowflake.external_access.pypi_rule)
+--           ENABLED = true;
+--
+--   Note that pip install requires a container runtime notebook. A warehouse
+--   runtime notebook can only use packages from Snowflake's Anaconda channel.
+-- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
 -- 5. Snowflake-Labs git repository (segment 4). Read-only, public, so no
 --    secret and no GIT_CREDENTIALS clause.
 -- ---------------------------------------------------------------------

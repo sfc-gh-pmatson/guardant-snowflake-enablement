@@ -736,6 +736,12 @@ this is the kind of line that looks redundant right up until it isn't."""),
     py("py_register", """from snowflake.ml.registry import Registry
 from snowflake.ml.model import task
 
+# Position the session. The registry resolves unqualified names against the
+# session's database and schema, and a notebook does not necessarily start in
+# the one you want.
+session.sql(f"USE DATABASE {DATABASE}").collect()
+session.sql(f"USE SCHEMA {SCHEMA}").collect()
+
 registry = Registry(session=session, database_name=DATABASE, schema_name=SCHEMA)
 
 # Re-running this notebook would otherwise collide on the version name. Fail
@@ -767,7 +773,10 @@ mv = registry.log_model(
 )
 
 print(f"\\nregistered {MODEL_NAME} {VERSION}")
-print("callable methods:", [f.name for f in mv.show_functions()])"""),
+# show_functions() returns dicts in some snowflake-ml-python versions and
+# objects in others. Handle both rather than guessing.
+funcs = mv.show_functions()
+print("callable methods:", [f["name"] if isinstance(f, dict) else f.name for f in funcs])"""),
 
     md("md_verify", """## Scoring it from SQL
 

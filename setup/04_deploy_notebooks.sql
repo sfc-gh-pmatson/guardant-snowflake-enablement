@@ -68,6 +68,20 @@ CREATE OR REPLACE NOTEBOOK GUARDANT_04_MODEL_REGISTRY
   COMMENT = 'Guardant Part 5 — train and register a model without leaving Snowflake';
 ALTER NOTEBOOK GUARDANT_04_MODEL_REGISTRY ADD LIVE VERSION FROM LAST;
 
+-- 5 — Register a model that is already committed to git -----------------------
+--   The counterpart to notebook 4: instead of training here, Snowflake fetches
+--   an existing .joblib off the git repository stage and registers it. Note that
+--   the pickle must be loadable by THIS runtime's scikit-learn, which is the one
+--   real constraint on this path.
+CREATE OR REPLACE NOTEBOOK GUARDANT_05_MODEL_FROM_GIT
+  FROM '@GUARDANT_ENABLEMENT_REPO/branches/main/notebooks'
+  MAIN_FILE = '05_register_model_from_git.ipynb'
+  QUERY_WAREHOUSE = GUARDANT_DEMO_WH
+  RUNTIME_NAME = 'SYSTEM$BASIC_RUNTIME'
+  COMPUTE_POOL = 'GUARDANT_NOTEBOOK_POOL'
+  COMMENT = 'Guardant Part 5 — register a git-committed model from inside Snowflake';
+ALTER NOTEBOOK GUARDANT_05_MODEL_FROM_GIT ADD LIVE VERSION FROM LAST;
+
 SHOW NOTEBOOKS LIKE 'GUARDANT_%' IN SCHEMA DEMO.GUARDANT_DEMO;
 
 /* ---------------------------------------------------------------------------
