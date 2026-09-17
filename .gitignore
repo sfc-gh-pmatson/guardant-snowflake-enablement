@@ -7,9 +7,8 @@ __pycache__/
 # Local virtualenv for the ML tooling (see demo/runbook.md)
 .venv-ml/
 
-# Models trained locally and deliberately NOT committed.
-# Part 5 shows two paths: model/variant_clf.joblib IS committed, to demonstrate
-# git as the handoff boundary. Anything matching *_local.joblib goes straight
-# from the laptop to the Model Registry instead, which is the everyday path.
-# The registry is the artifact store; git is for code and definitions.
+# Escape hatch for locally trained models you do NOT want in git.
+# Both of the models used in Part 5 ARE committed (model/variant_clf.joblib and
+# model/variant_clf_gb.joblib) so a clean clone can replay either deployment
+# path. Anything you name *_local.joblib stays on your laptop instead.
 model/*_local.joblib

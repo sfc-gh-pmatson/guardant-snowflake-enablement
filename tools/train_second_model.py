@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Train a SECOND model locally, and deliberately do NOT commit it.
+Train a SECOND model locally and register it as a new version.
 
-Purpose: Part 5 of the session needs two distinct paths shown.
+Purpose: Part 5 of the session needs two distinct deployment paths shown.
 
-  Path A (committed)   model/variant_clf.joblib is in git. Snowflake can see it
-                       on the git repository stage. That demonstrates git as the
-                       handoff boundary between training and deployment.
+  Path A (via git)   Snowflake reads model/variant_clf.joblib off the git
+                     repository stage. Git is the handoff boundary between
+                     training and deployment, and the pull happens entirely
+                     inside the platform.
 
-  Path B (local only)  THIS model never enters git. It goes straight from the
-                       laptop into the Model Registry as a new version. That is
-                       the everyday path a data scientist actually uses, and it
-                       is the honest contrast: the registry is the artifact
-                       store, git is for the code and the definitions.
+  Path B (direct)    THIS model goes from the laptop straight into the Model
+                     Registry as a new version, with no repo round-trip. That
+                     is the everyday path a data scientist actually uses.
 
-The output path is in .gitignore. If you find yourself needing to commit it,
-something has gone wrong with the story.
+Both artifacts are committed so a clean clone can replay either path. What
+distinguishes the two paths is the mechanism that moves the model, not whether
+the bytes happen to also live in git.
 
 A different algorithm from V1 on purpose - V1 is a RandomForest. Gradient
 boosting gives a visibly different model in the registry rather than a
@@ -24,7 +24,7 @@ near-identical twin, which makes the versioning point land.
 Usage:
     .venv-ml/bin/python tools/train_second_model.py
     .venv-ml/bin/python tools/deploy_local_model.py \
-        --model-file model/variant_clf_gb_local.joblib --version V2
+        --model-file model/variant_clf_gb.joblib --version V2
 """
 
 from __future__ import annotations
@@ -42,8 +42,7 @@ from sklearn.model_selection import train_test_split
 from snowflake.snowpark import Session
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-# NOTE the _local suffix: .gitignore matches model/*_local.joblib
-MODEL_PATH = REPO_ROOT / "model" / "variant_clf_gb_local.joblib"
+MODEL_PATH = REPO_ROOT / "model" / "variant_clf_gb.joblib"
 
 CONNECTION = "Demo_Account"
 ROLE = "ACCOUNTADMIN"
@@ -102,7 +101,7 @@ def main() -> int:
         joblib.dump(clf, MODEL_PATH, compress=3)
         size_kb = MODEL_PATH.stat().st_size / 1024
         print(f"  wrote {MODEL_PATH.relative_to(REPO_ROOT)} ({size_kb:.0f} KB)")
-        print("\nThis file is gitignored on purpose. Deploy it with:")
+        print("\nDeploy it straight to the registry with:")
         print(f"  .venv-ml/bin/python tools/deploy_local_model.py \\")
         print(f"      --model-file {MODEL_PATH.relative_to(REPO_ROOT)} --version V2")
         return 0

@@ -10,7 +10,7 @@ what you actually want when demonstrating a handoff or a model update.
 
     # add a local model file as version V2
     .venv-ml/bin/python tools/deploy_local_model.py \
-        --model-file model/variant_clf_gb_local.joblib --version V2
+        --model-file model/variant_clf_gb.joblib --version V2
 
     # check what is already registered without changing anything
     .venv-ml/bin/python tools/deploy_local_model.py --list
