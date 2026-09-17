@@ -49,6 +49,25 @@ CREATE OR REPLACE NOTEBOOK GUARDANT_03_CORTEX_AI
   COMMENT = 'Guardant session 3/3 — Cortex AI on clinical text';
 ALTER NOTEBOOK GUARDANT_03_CORTEX_AI ADD LIVE VERSION FROM LAST;
 
+-- 4 — Train + register a model inside Snowflake -----------------------------
+--   Container runtime, not warehouse runtime, for one reason: snowflake-ml-python
+--   is already present there, so nothing has to be chosen in the Packages picker
+--   before the notebook will run. That matters for a notebook deployed from git,
+--   because the picker is a UI action that no script can perform for you.
+--
+--   The trade-off is encoded in the notebook itself: on container runtime,
+--   log_model defaults to Snowpark Container Services only, so the model would
+--   register and then MODEL!PREDICT would fail to resolve from SQL. The notebook
+--   passes target_platforms=["WAREHOUSE"] explicitly to avoid that.
+CREATE OR REPLACE NOTEBOOK GUARDANT_04_MODEL_REGISTRY
+  FROM '@GUARDANT_ENABLEMENT_REPO/branches/main/notebooks'
+  MAIN_FILE = '04_train_register_in_snowflake.ipynb'
+  QUERY_WAREHOUSE = GUARDANT_DEMO_WH
+  RUNTIME_NAME = 'SYSTEM$BASIC_RUNTIME'
+  COMPUTE_POOL = 'GUARDANT_NOTEBOOK_POOL'
+  COMMENT = 'Guardant Part 5 — train and register a model without leaving Snowflake';
+ALTER NOTEBOOK GUARDANT_04_MODEL_REGISTRY ADD LIVE VERSION FROM LAST;
+
 SHOW NOTEBOOKS LIKE 'GUARDANT_%' IN SCHEMA DEMO.GUARDANT_DEMO;
 
 /* ---------------------------------------------------------------------------
@@ -59,4 +78,9 @@ SHOW NOTEBOOKS LIKE 'GUARDANT_%' IN SCHEMA DEMO.GUARDANT_DEMO;
      EXECUTE NOTEBOOK GUARDANT_01_NOTEBOOKS();
      EXECUTE NOTEBOOK GUARDANT_02_SNOWPARK();
      EXECUTE NOTEBOOK GUARDANT_03_CORTEX_AI();
+
+   Notebook 4 registers GUARDANT_VARIANT_CLF version V3. It is safe to re-run:
+   it drops an existing V3 first rather than colliding on the version name.
+
+     EXECUTE NOTEBOOK GUARDANT_04_MODEL_REGISTRY();
    --------------------------------------------------------------------------- */

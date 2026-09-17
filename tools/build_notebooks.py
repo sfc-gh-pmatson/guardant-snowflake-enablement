@@ -1057,6 +1057,203 @@ say so — otherwise it stays for you to keep poking at."""),
 
 
 # ===========================================================================
+# Notebook 4 — train and register a model without leaving Snowflake
+# ===========================================================================
+
+NB_MODEL = notebook([
+    md("md_intro", """# 4 — Train and Register a Model, Without Leaving Snowflake
+
+Part 5 shows three ways a model reaches the registry. This notebook is the third.
+
+| | Where training runs | How it reaches the registry |
+|---|---|---|
+| **A — via git** | Laptop | Committed to the repo; Snowflake pulls it off the git stage |
+| **B — from your laptop** | Laptop | `log_model` pushes it straight from your machine |
+| **C — this notebook** | **Snowflake** | Never touches a laptop at all |
+
+Path C is the one to reach for when the training data is large enough that pulling
+it down was the problem in the first place. The data stays where it is, the compute
+comes to it, and the finished model is a governed Snowflake object at the end.
+
+The result is a third version of `GUARDANT_VARIANT_CLF`, deliberately a different
+algorithm from the other two so the registry shows three genuinely different
+models rather than three near-identical twins."""),
+
+    py("py_session", """# In a Snowflake notebook you never build a connection. You are already in one.
+from snowflake.snowpark.context import get_active_session
+
+session = get_active_session()
+
+DATABASE = "DEMO"
+SCHEMA = "GUARDANT_DEMO"
+MODEL_NAME = "GUARDANT_VARIANT_CLF"
+VERSION = "V3"
+
+FEATURES = ["VAF", "READ_DEPTH", "ALT_READ_COUNT", "MAPPING_QUALITY"]
+
+print("account  :", session.get_current_account())
+print("role     :", session.get_current_role())
+print("warehouse:", session.get_current_warehouse())"""),
+
+    md("md_data", """## The training sample
+
+Note what is *not* happening: no extract, no CSV, no `df.to_csv()` on a laptop.
+
+`SAMPLE` has to come immediately after the table name and before `WHERE` — the
+other order is a syntax error. We sample 80k rows and then filter to `PASS`
+calls, which lands around 50k rows: enough to train on, small enough to pull into
+the notebook's memory in a couple of seconds."""),
+
+    py("py_train", """import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score, recall_score
+from sklearn.model_selection import train_test_split
+
+TRAINING_SQL = f\"\"\"
+SELECT VAF, READ_DEPTH, ALT_READ_COUNT, MAPPING_QUALITY,
+       IFF(CLINICAL_SIGNIFICANCE = 'Pathogenic', 1, 0) AS IS_PATHOGENIC
+FROM {DATABASE}.{SCHEMA}.VARIANT_CALLS SAMPLE (80000 ROWS)
+WHERE CALL_FILTER = 'PASS'
+LIMIT 50000
+\"\"\"
+
+df = session.sql(TRAINING_SQL).to_pandas()
+print(f"pulled {len(df):,} rows into the notebook")
+
+X = df[FEATURES]
+y = df["IS_PATHOGENIC"]
+print(f"positive class: {y.mean():.1%}")
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, random_state=42, stratify=y
+)
+
+# A linear model on purpose - V1 is a RandomForest and V2 is gradient boosting.
+# LogisticRegression needs its features on a common scale, so it goes in a
+# Pipeline. The registry treats a Pipeline as one model, which is what you want:
+# the scaler travels with the coefficients instead of being re-implemented in SQL.
+#
+# class_weight="balanced" is not optional here. The positive class is under 10%,
+# so an unweighted model happily predicts zero for every row and reports the base
+# rate as its accuracy.
+pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42)),
+])
+pipe.fit(X_train, y_train)
+
+proba = pipe.predict_proba(X_test)[:, 1]
+pred = pipe.predict(X_test)
+auc = roc_auc_score(y_test, proba)
+recall = recall_score(y_test, pred)
+pred_rate = pred.mean()
+
+print(f"holdout ROC AUC        : {auc:.4f}")
+print(f"recall on pathogenic   : {recall:.1%}")
+print(f"predicted-positive rate: {pred_rate:.1%} (base rate {y_test.mean():.1%})")
+
+if pred_rate in (0.0, 1.0):
+    raise RuntimeError("Model predicts a single class - do not register this.")"""),
+
+    md("md_register", """## Registering it
+
+Two arguments below are the ones that actually decide whether this works.
+
+**`sample_input_data`** is required for scikit-learn. The registry reads the
+feature names and types off it to build the model's signature. Without it (or an
+explicit `signatures=`) `log_model` refuses the model.
+
+**`target_platforms=["WAREHOUSE"]`** matters *because this notebook runs on a
+container runtime*. There, `target_platforms` defaults to Snowpark Container
+Services only — so the model would register successfully and then `MODEL!PREDICT`
+from SQL would fail to resolve. Off container runtime the default covers both, so
+this is the kind of line that looks redundant right up until it isn't."""),
+
+    py("py_register", """from snowflake.ml.registry import Registry
+from snowflake.ml.model import task
+
+registry = Registry(session=session, database_name=DATABASE, schema_name=SCHEMA)
+
+# Re-running this notebook would otherwise collide on the version name. Fail
+# loudly and clear it deliberately rather than letting log_model error out with
+# a stale model still live in the registry.
+existing = [r["name"] for r in
+            session.sql(f"SHOW VERSIONS IN MODEL {DATABASE}.{SCHEMA}.{MODEL_NAME}").collect()]
+print("versions already registered:", ", ".join(existing) or "(none)")
+
+if VERSION in existing:
+    print(f"{VERSION} exists - dropping it so this run replaces it")
+    session.sql(
+        f"ALTER MODEL {DATABASE}.{SCHEMA}.{MODEL_NAME} DROP VERSION {VERSION}"
+    ).collect()
+
+mv = registry.log_model(
+    pipe,
+    model_name=MODEL_NAME,
+    version_name=VERSION,
+    sample_input_data=X_train.head(100),
+    task=task.Task.TABULAR_BINARY_CLASSIFICATION,
+    metrics={
+        "roc_auc": round(float(auc), 4),
+        "recall": round(float(recall), 4),
+        "predicted_positive_rate": round(float(pred_rate), 4),
+    },
+    comment="LogisticRegression pipeline, trained and registered inside Snowflake",
+    target_platforms=["WAREHOUSE"],
+)
+
+print(f"\\nregistered {MODEL_NAME} {VERSION}")
+print("callable methods:", [f.name for f in mv.show_functions()])"""),
+
+    md("md_verify", """## Scoring it from SQL
+
+The model is now a schema-level object. Anyone with `USAGE` on it can call it
+from plain SQL without knowing it is a scikit-learn pipeline, without a Python
+environment, and without the ability to see inside it.
+
+`USAGE` is the privilege to keep in mind for a wider team: it permits warehouse
+inference while revealing nothing about the model's internals. `READ` is the more
+permissive one, and it exposes metadata and metrics."""),
+
+    sql("sql_versions", """SHOW VERSIONS IN MODEL DEMO.GUARDANT_DEMO.GUARDANT_VARIANT_CLF;"""),
+
+    sql("sql_predict", """-- Model methods resolve against the session schema, so USE SCHEMA is required
+-- here. An unqualified MODEL!PREDICT without it fails as "Unknown function".
+USE SCHEMA DEMO.GUARDANT_DEMO;
+
+WITH m AS MODEL GUARDANT_VARIANT_CLF VERSION V3
+SELECT
+    variant_id,
+    gene_symbol,
+    vaf,
+    read_depth,
+    m!PREDICT(vaf, read_depth, alt_read_count, mapping_quality) AS scored
+FROM DEMO.GUARDANT_DEMO.VARIANT_CALLS
+WHERE call_filter = 'PASS'
+LIMIT 10;"""),
+
+    md("md_close", """## Where that leaves you
+
+`GUARDANT_VARIANT_CLF` now carries three versions, each having arrived by a
+different route, and all three callable the same way from SQL.
+
+The point worth keeping: **the registry is the artifact store, and git is for the
+code that produces the artifact.** A `.joblib` in a repo gives you no signature,
+no metrics, no versioning and no access control. The same model logged here gives
+you all four, and inference runs next to the data instead of pulling it to a
+laptop first.
+
+Set which version consumers get by default with:
+
+```sql
+ALTER MODEL DEMO.GUARDANT_DEMO.GUARDANT_VARIANT_CLF SET DEFAULT_VERSION = V3;
+```"""),
+])
+
+
+# ===========================================================================
 
 def main() -> None:
     NOTEBOOK_DIR.mkdir(parents=True, exist_ok=True)
@@ -1064,6 +1261,7 @@ def main() -> None:
         "01_snowflake_notebooks.ipynb": NB1,
         "02_snowpark_at_scale.ipynb": NB2,
         "03_cortex_ai_clinical_text.ipynb": NB3,
+        "04_train_register_in_snowflake.ipynb": NB_MODEL,
         "00_lab_workbook.ipynb": NB_LAB,
     }
     for filename, nb in targets.items():

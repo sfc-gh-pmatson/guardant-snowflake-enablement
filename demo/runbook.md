@@ -131,6 +131,73 @@ Three things to say unprompted, because this audience will find them:
    was derived from exactly the four features I gave it. Textbook leakage. Saying
    you caught it buys more credibility than a clean number would have.
 
+#### The recommended path, if they ask
+
+They will ask, because their instinct will be that the model belongs in git next to
+the code. The answer to give:
+
+> **Log it to the Model Registry directly from wherever you trained it. Not git.**
+
+Git holds the code that trains a model. The registry holds the model. A `.joblib`
+committed to a repo gives you no signature, no metrics, no versioning and no access
+control — and a binary that bloats history and cannot be meaningfully diffed. The
+same model in the registry is a schema-level object with all four, callable from SQL.
+
+Both `.joblib` files are committed in this repo anyway, so a clean clone can replay
+either path. That is a teaching decision, not a recommendation — say so if it comes up.
+
+The minimal shape, and the thing people miss is that **you never upload the file** —
+`log_model` takes the in-memory Python object and handles serialization, environment
+capture and staging:
+
+```python
+clf = joblib.load("model/variant_clf_gb.joblib")   # must load in YOUR env first
+reg = Registry(session=session, database_name="DEMO", schema_name="GUARDANT_DEMO")
+mv  = reg.log_model(clf, model_name="GUARDANT_VARIANT_CLF", version_name="V2",
+                    sample_input_data=train_features)   # required for sklearn
+```
+
+Four things actually break this:
+
+| Gotcha | Symptom | Fix |
+|---|---|---|
+| Local env cannot load the pickle | `joblib.load` fails before Snowflake is involved | Pin sklearn to a version in Snowflake's channel — 1.5.2 here |
+| No `sample_input_data` or `signatures` | `log_model` refuses sklearn models outright | Pass a small training frame |
+| Model not runnable in a warehouse | `log_model` **fails**, since the default targets both | `target_platforms=["SNOWPARK_CONTAINER_SERVICES"]` for GPU or large models |
+| `pip_requirements` with no repository | Warehouse cannot install them | `artifact_repository_map={"pip": "snowflake.snowpark.pypi_shared_repository"}` |
+
+Dependencies are auto-populated from the local environment when targeting a
+warehouse, which is exactly why the version pin matters: your machine's environment
+becomes the model's contract. Warehouse-deployed models cap at 15 GB.
+
+One deviation to own: `tools/deploy_local_model.py` sets `relax_version: False`,
+where Snowflake defaults to `True`. That was chosen for demo determinism — it forces
+the warehouse to resolve the identical sklearn build. Tell them to leave it at the
+default in production, because a channel change would otherwise break logging.
+
+#### Path C — never touches a laptop (notebook 4)
+
+`GUARDANT_04_MODEL_REGISTRY`, run from Snowsight, trains a scaled
+`LogisticRegression` and registers it as **V3**. Use this when someone objects that
+paths A and B both still start on a laptop — here the training data never moves at
+all.
+
+Two details in that notebook are worth showing on screen rather than skipping:
+
+- It runs on **container runtime**, where `snowflake-ml-python` is already present,
+  so nothing has to be picked in the Packages dropdown. A notebook deployed from git
+  cannot select packages for you.
+- Because it is container runtime, `log_model` would default to **SPCS only**, and
+  `MODEL!PREDICT` from SQL would then fail to resolve. The notebook passes
+  `target_platforms=["WAREHOUSE"]` explicitly. This is a good "the default is not
+  always what you want" moment.
+
+Safe to re-run: it drops an existing V3 rather than colliding on the version name.
+
+After it runs, `GUARDANT_VARIANT_CLF` has three versions that arrived three
+different ways and are all called identically from SQL. That is the segment's
+closing line.
+
 ### 6 — Semantic view
 The question that does the work: *"does 'reportable' mean the same thing in every
 analysis you ship today?"* The answer is usually no, and that is the argument.
