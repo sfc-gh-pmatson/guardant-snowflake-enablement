@@ -1,93 +1,181 @@
-# Guardant Health — Snowflake Enablement Session
+# Guardant Health — Snowflake Enablement
 
-Demo assets for the in-person session with the Guardant Health bioinformatics
-and data science team.
+Everything from the in-person enablement session, packaged so you can rebuild it in
+your own Snowflake account and keep working with it.
 
-**Session:** Thursday 17 September 2026, 11:00–12:00 PDT (in person)
-**Format:** eight-segment developer surface tour — Peter drives throughout.
+**All data here is synthetic.** There are no data files — the entire ~20M row
+dataset is generated in-database from Snowflake's `GENERATOR` and `RANDOM`
+functions, so it is reproducible from SQL alone and contains nothing patient-derived.
 
-> **Running the session?** Start at **[`demo/runbook.md`](demo/runbook.md)**, then
-> run **[`demo/demo.sql`](demo/demo.sql)** top to bottom.
-> Build everything first with **[`demo/build.sql`](demo/build.sql)**.
->
-> **Want a hands-on lab instead?** `lab/` is a complete self-serve lab, kept as a
-> take-home. See [`lab/PREREQUISITES.md`](lab/PREREQUISITES.md).
+## The problem this addresses
 
-## The problem we are addressing
+Today the loop is: query Snowflake, **download the result**, process it in a local
+Jupyter notebook, write results back. That download step is the bottleneck. It caps
+analysis at local RAM, requires every teammate to maintain an identical Python
+environment, and puts patient-adjacent data on laptops.
 
-The team currently queries Snowflake, **downloads the result**, processes it in
-local Jupyter notebooks, and writes results back. That extract step is the
-bottleneck: it caps analysis at local RAM, requires every teammate to maintain an
-identical Python environment, and puts patient-adjacent data on laptops.
+Everything in this repo runs the same workload *inside* the platform instead.
 
-Every asset here demonstrates the same workload running *inside* the platform.
+## Start here
+
+Run these in order with a role that can create databases, warehouses and roles
+(ACCOUNTADMIN is simplest). All of them are idempotent — re-running is safe.
+
+```bash
+snow sql -c <connection> --role ACCOUNTADMIN -f setup/00_setup.sql
+snow sql -c <connection> --role ACCOUNTADMIN -f setup/01_synthetic_data.sql   # ~30s
+snow sql -c <connection> --role ACCOUNTADMIN -f setup/02_udf.sql
+```
+
+That gives you the dataset in `DEMO.GUARDANT_DEMO` on warehouse `GUARDANT_DEMO_WH`.
+At this point you can open the notebooks and work.
+
+**Optional, in order, as you need them:**
+
+| Script | What it adds | When you need it |
+|---|---|---|
+| `setup/03_git_integration.sql` | Secret, API integration, git repository object | To pull this repo into Snowflake |
+| `setup/04_deploy_notebooks.sql` | Creates the four notebooks from the git repo | After 03 |
+| `setup/05_semantic_view_and_agent.sql` | Semantic view, Cortex Agent, compute pool, consumer role | For the governed-access parts |
+| `setup/99_teardown.sql` | Removes everything | When you are done |
+
+`setup/03` needs a GitHub credential — see the placeholder inside it. If you only
+want the notebooks locally, skip 03 and 04 and open the `.ipynb` files directly.
 
 ## What is in here
 
 ```
-demo/                       THE SESSION (Peter drives, 8 segments)
-  runbook.md                talk track, timings, cut order, triage — start here
-  build.sql                 creates every object, with a VERIFY section
-  demo.sql                  run top to bottom during the session
-  teardown.sql              suspend / remove (compute pools cost money)
-semantic/
-  sv_guardant_variants.yaml the semantic view, as a versioned file
-model/
-  variant_clf.joblib        the trained model, committed for segment 8
-tools/
-  train_and_register_model.py  train locally, log to the Model Registry
-  deploy_semantic_view.py      deploy the semantic view from its YAML
-  build_notebooks.py           regenerates the .ipynb files from plain text
-  verify_sql_cells.py          executes every notebook SQL cell
-lab/                        TAKE-HOME hands-on lab (not used live)
-  PREREQUISITES.md          what an admin must confirm and grant
-  00_preflight_check.sql    read-only readiness check
-  01_admin_setup.sql        lab role, warehouse, per-participant schemas
-  02_participant_setup.sql  what each attendee runs
-  PARTICIPANT_GUIDE.md      the six stations
-  FACILITATOR_RUNBOOK.md    lab facilitation notes
-  99_rehearsal_shortcut.sql stand the lab up in your own account
 setup/
-  00_setup.sql              database, schema, warehouse, stage
-  01_synthetic_data.sql     generates the entire dataset (~20M rows)
-  02_udf.sql                variant confidence UDF
-  03_git_integration.sql    secret / API integration / git repository
-  04_deploy_notebooks.sql   creates the notebooks from this git repo
+  00_setup.sql                    database, schema, warehouse, stage
+  01_synthetic_data.sql           generates the entire ~20M row dataset
+  02_udf.sql                      variant confidence UDF
+  03_git_integration.sql          secret / API integration / git repository
+  04_deploy_notebooks.sql         creates the notebooks from this repo
+  05_semantic_view_and_agent.sql  semantic view, agent, compute pool, roles
+  99_teardown.sql                 removes everything
 notebooks/
-  00_lab_workbook.ipynb             hands-on: all six lab stations
-  01_snowflake_notebooks.ipynb      used in segment 3
-  02_snowpark_at_scale.ipynb        Python DataFrames at 20M rows
-  03_cortex_ai_clinical_text.ipynb  LLM functions over pathology narratives
-dashboards/
-  snowsight_dashboard_queries.sql   six Snowsight tiles
+  01_snowflake_notebooks.ipynb           SQL + Python in one notebook
+  02_snowpark_at_scale.ipynb             Python DataFrames over 20M rows
+  03_cortex_ai_clinical_text.ipynb       LLM functions over pathology narratives
+  04_train_register_in_snowflake.ipynb   train + register a model, no laptop
+  environment.yml                        notebook packages
+semantic/
+  sv_guardant_variants.yaml       the semantic view as a versioned file
+model/
+  variant_clf.joblib              RandomForest (registry V1)
+  variant_clf_gb.joblib           HistGradientBoosting (registry V2)
+tools/
+  train_and_register_model.py     train locally and register
+  train_second_model.py           train the gradient-boosting variant
+  deploy_local_model.py           push a .joblib to the registry as a new version
+  deploy_semantic_view.py         deploy the semantic view from its YAML
+  build_notebooks.py              regenerates the .ipynb files from plain text
+  verify_sql_cells.py             executes every notebook SQL cell
 ```
 
-### The eight segments
+## The notebooks
 
-| # | Segment | Budget |
+Built to be read in order — each closes by pointing at the next — but any one of
+them stands alone.
+
+1. **Snowflake Notebooks** — the same interface, with compute you choose. SQL and
+   Python cells side by side, no local environment to maintain.
+2. **Snowpark at scale** — pandas-shaped DataFrame code executing as SQL over 20M
+   rows. Nothing is pulled down to be processed.
+3. **Cortex AI on clinical text** — `AI_EXTRACT`, `AI_CLASSIFY`, `AI_COMPLETE` and
+   `AI_AGG` over free-text pathology narratives, without calling an external API.
+4. **Train and register a model** — trains inside Snowflake and logs the result to
+   the Model Registry, so the training data never moves.
+
+Notebook 4 runs on **container runtime** because `snowflake-ml-python` is already
+present there — a notebook created from git cannot select packages from the
+Snowsight dropdown for you.
+
+## Deploying models
+
+Three routes reach the registry, and the repo shows all of them:
+
+| | Where training runs | How the model reaches the registry |
 |---|---|---|
-| 1 | Snowflake overview, CoCo and CoCo Desktop | 8 min |
-| 2 | Claude Code plugin + VS Code extension | 5 min |
-| 3 | Notebooks, including creating a compute pool | 9 min |
-| 4 | Snowflake-Labs GitHub, git repository objects | 6 min |
-| 5 | Local model → Model Registry → inference in Snowflake | 12 min |
-| 6 | Semantic view over the data | 8 min |
-| 7 | Cortex Agent on the semantic view, shared to a role | 8 min |
-| 8 | Commit the YAML and model, redeploy from git | 10 min |
+| **A — via git** | Your machine | Committed here; Snowflake pulls it off the git stage |
+| **B — from your laptop** | Your machine | `log_model` pushes it directly |
+| **C — notebook 4** | Snowflake | Never leaves the platform |
 
-### The GitOps loop
+### The recommended path
 
-`semantic/sv_guardant_variants.yaml` is the source of truth for the semantic view.
-It deploys with `SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML` and exports back out of the
-running object with `SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW`, so the file in git and
-the object in the account are the same artifact. Redeploying it into a second schema
-returns byte-identical numbers, which is the proof.
+> **Log the model to the Model Registry directly from wherever you trained it.
+> Not git.**
+
+Git holds the code that trains a model; the registry holds the model. A `.joblib`
+in a repo gives you no signature, no metrics, no versioning and no access control,
+and it is a binary that cannot be meaningfully diffed. The same model in the
+registry is a schema-level object with all four, callable from SQL.
+
+Both `.joblib` files are committed here anyway so a clean clone can replay path A.
+That is a teaching decision, not a recommendation.
+
+The thing most people miss: **you never upload the file.** `log_model` takes the
+in-memory Python object and handles serialization, environment capture and staging.
+
+```python
+clf = joblib.load("model/variant_clf_gb.joblib")   # must load in YOUR env first
+reg = Registry(session=session, database_name="DEMO", schema_name="GUARDANT_DEMO")
+mv  = reg.log_model(clf, model_name="GUARDANT_VARIANT_CLF", version_name="V2",
+                    sample_input_data=train_features)   # required for sklearn
+```
+
+Four things actually break this:
+
+| Gotcha | Symptom | Fix |
+|---|---|---|
+| Local env cannot load the pickle | `joblib.load` fails before Snowflake is involved | Pin scikit-learn to a version in Snowflake's channel — 1.5.2 here |
+| No `sample_input_data` or `signatures` | `log_model` refuses scikit-learn models outright | Pass a small training frame |
+| Model not runnable in a warehouse | `log_model` **fails**, because the default targets both platforms | `target_platforms=["SNOWPARK_CONTAINER_SERVICES"]` for GPU or large models |
+| `pip_requirements` with no repository | The warehouse cannot install them | `artifact_repository_map={"pip": "snowflake.snowpark.pypi_shared_repository"}` |
+
+Dependencies are auto-populated from your local environment when targeting a
+warehouse, which is exactly why the version pin matters: your machine's environment
+becomes the model's contract. Warehouse-deployed models cap at 15 GB.
+
+One deviation to know about: `tools/deploy_local_model.py` sets
+`relax_version: False`, where Snowflake defaults to `True`. That was chosen to force
+the warehouse to resolve an identical scikit-learn build. **Leave it at the default
+in production** — otherwise a channel change can break logging.
+
+If you are running inside a container runtime notebook, pass
+`target_platforms=["WAREHOUSE"]` explicitly. There the default is Snowpark Container
+Services only, so the model registers successfully and then `MODEL!PREDICT` fails to
+resolve from SQL.
+
+### Scoring from SQL
+
+```sql
+USE SCHEMA DEMO.GUARDANT_DEMO;   -- model methods resolve against the session schema
+
+WITH m AS MODEL GUARDANT_VARIANT_CLF VERSION V1
+SELECT variant_id, m!PREDICT(vaf, read_depth, alt_read_count, mapping_quality)
+FROM VARIANT_CALLS WHERE call_filter = 'PASS' LIMIT 10;
+```
+
+The model is a schema object, so a role with `USAGE` can score data without a Python
+environment and without seeing the model's internals. `READ` additionally exposes
+metadata and metrics.
+
+## The semantic view
+
+`semantic/sv_guardant_variants.yaml` is the source of truth. It deploys with
+`SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML` and exports back out of the running object
+with `SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW`, so the file in git and the object in the
+account are the same artifact:
+
+```bash
+python3 tools/deploy_semantic_view.py --schema DEMO.GUARDANT_DEMO
+```
+
+Redeploying it into a second schema returns byte-identical numbers, which is the
+point: a metric defined once is inherited by every consumer — SQL, BI and AI alike.
 
 ## The data
-
-**All synthetic.** Nothing in this repo is real patient data, and there are no
-data files — the entire dataset is generated in-database from Snowflake's
-`GENERATOR` and `RANDOM` functions, so it is fully reproducible from SQL alone.
 
 A synthetic liquid-biopsy cohort:
 
@@ -96,7 +184,7 @@ A synthetic liquid-biopsy cohort:
 | `PATIENTS` | 50,000 | Demographics, primary cancer type, stage |
 | `SPECIMENS` | 120,000 | Serial blood draws with assay, tumour fraction, QC |
 | `VARIANT_CALLS` | **20,000,000** | Raw pre-filter calls, ~167 per specimen |
-| `PATHOLOGY_REPORTS` | 2,000 | Free-text narratives for the Cortex AI demo |
+| `PATHOLOGY_REPORTS` | 2,000 | Free-text narratives for the Cortex AI notebook |
 | `GENE_PANEL` | 60 | Panel definition with targeted-therapy annotations |
 | `V_REPORTABLE_VARIANTS` | ~11,000,000 | The analysis-ready join (PASS calls only) |
 
@@ -105,108 +193,65 @@ The shaping is deliberate, not uniform noise:
 - Gene mutation frequency follows a realistic long tail (TP53 ≫ KRAS ≫ PIK3CA ≫ …)
 - VAF is cubed-skewed, so most calls are low-frequency and a minority are clonal
 - Low tumour fraction correlates with QC trouble, as in a real assay
-- ~59% of raw calls are `PASS`; the rest are the noise floor the demos filter out
+- ~59% of raw calls are `PASS`; the rest are the noise floor the notebooks filter out
 
-20M rows is chosen so that "just pull it into pandas" is genuinely infeasible,
-while still generating in about 30 seconds on a MEDIUM warehouse.
+20M rows is chosen so that "just pull it into pandas" is genuinely infeasible, while
+still generating in about 30 seconds on a MEDIUM warehouse.
 
-## Setup
+## Editing the notebooks
 
-Run once, in order:
-
-```bash
-snow sql -c <connection> --role ACCOUNTADMIN -f setup/00_setup.sql
-snow sql -c <connection> --role ACCOUNTADMIN -f setup/01_synthetic_data.sql   # ~30s
-snow sql -c <connection> --role ACCOUNTADMIN -f setup/02_udf.sql
-```
-
-Everything lands in `DEMO.GUARDANT_DEMO` on warehouse `GUARDANT_DEMO_WH`
-(MEDIUM, 60s auto-suspend).
-
-All three scripts are idempotent — re-running gives a fresh randomised dataset.
-
-## Verifying before you present
-
-Two layers, both worth running the morning of the session.
-
-**SQL cells** — executes every SQL cell in all three notebooks and reports
-pass/fail per cell:
-
-```bash
-python3 tools/verify_sql_cells.py
-```
-
-**Whole notebooks, including the Python cells** — runs them headlessly in
-Snowflake, which is the only way to catch Snowpark errors:
-
-```sql
-EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_01_NOTEBOOKS();
-EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_02_SNOWPARK();
-EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_03_CORTEX_AI();
-```
-
-All three currently pass end to end. Notebook 3 makes real Cortex calls, so it
-consumes a small amount of AI credit.
-
-A notebook that only looks right is worthless in front of a customer.
-
-If you edit notebook content, edit `tools/build_notebooks.py` and regenerate:
+Cell content lives as plain text in `tools/build_notebooks.py`, which keeps it
+reviewable in diffs and means a mangled `.ipynb` JSON blob is always recoverable.
+Edit that file, then regenerate:
 
 ```bash
 python3 tools/build_notebooks.py
 ```
 
-Cell content lives as plain text in that script, which keeps it reviewable in
-diffs and means a mangled `.ipynb` JSON blob is always recoverable.
-
-After pushing notebook changes, redeploy so Snowflake picks them up:
+Check the SQL still runs before trusting it:
 
 ```bash
-snow sql -c <connection> --role ACCOUNTADMIN -f setup/04_deploy_notebooks.sql
+python3 tools/verify_sql_cells.py
 ```
 
-## Session flow
+To catch Snowpark and Python errors you have to actually execute the notebooks,
+which only Snowflake can do:
 
-| Segment | Asset | Minutes |
-|---|---|---|
-| Notebooks | `01_snowflake_notebooks.ipynb` | ~10 |
-| GitHub integration | this repo, linked as a Workspace | ~10 |
-| Cortex Code | live, in Snowsight | ~10 |
-| Snowpark | `02_snowpark_at_scale.ipynb` | ~10 |
-| Cortex AI | `03_cortex_ai_clinical_text.ipynb` | ~10 |
-| Snowsight | `dashboards/snowsight_dashboard_queries.sql` | ~3 |
+```sql
+EXECUTE NOTEBOOK DEMO.GUARDANT_DEMO.GUARDANT_01_NOTEBOOKS();
+```
 
-The notebooks are built to be read in order — each one closes by pointing at the
-next — but any single notebook stands alone if the conversation goes sideways.
+If you changed notebooks and want Snowflake to pick them up, push, then re-run
+`setup/04_deploy_notebooks.sql`.
 
 ## Connecting this repo as a Snowflake Workspace
 
-The GitHub segment of the session uses this repo as its own demo subject.
-
-Snowflake-side objects (secret, API integration, git repository) are created by
-`setup/03_git_integration.sql`. **The Workspace itself must be created in the
-Snowsight UI** — there is no DDL or CLI path for a git-backed Workspace:
+`setup/03_git_integration.sql` creates the Snowflake-side objects (secret, API
+integration, git repository). **The Workspace itself must be created in the Snowsight
+UI** — there is no DDL or CLI path for a git-backed Workspace:
 
 > Projects → Workspaces → **From Git repository**
 
-Point it at this repo's HTTPS URL and select the credential created by the
-setup script.
+Point it at this repo's HTTPS URL and select the credential the setup script created.
 
-## Fallbacks if a demo fails live
+## Troubleshooting
 
-- **Cortex model unavailable in region** — `AI_COMPLETE` takes a model argument;
-  swap `claude-4-sonnet` for another available model, or fall back to the
+- **Cortex model unavailable in your region** — `AI_COMPLETE` takes a model
+  argument; swap `claude-4-sonnet` for another available model, or use the
   `AI_EXTRACT` / `AI_CLASSIFY` cells, which do not name a model.
-- **UDF missing** — re-run `setup/02_udf.sql`; the notebook's Python
-  registration cell uses `replace=True` and is safe to re-run at any point.
-- **Notebook packages missing** — `matplotlib` comes from `environment.yml`. If a
-  chart cell fails, skip it; the SQL result table above it makes the same point.
-- **Warehouse cold** — first query of the session pays resume latency. Run
-  `SELECT 1` on `GUARDANT_DEMO_WH` a minute before you start.
+- **`MODEL!PREDICT` is an unknown function** — you need `USE SCHEMA
+  DEMO.GUARDANT_DEMO`; model methods resolve against the session schema.
+- **A model version already exists** — registry versions are immutable. Either pick
+  a new `version_name` or `ALTER MODEL ... DROP VERSION <v>` first.
+- **`joblib.load` fails or warns about versions** — your scikit-learn does not match
+  the one that wrote the pickle. Pin to 1.5.2.
+- **UDF missing** — re-run `setup/02_udf.sql`.
+- **Role restrictions appear not to work** — secondary roles. If `USE ROLE X` seems
+  to restrict nothing, run `USE SECONDARY ROLES NONE` first; an inherited
+  ACCOUNTADMIN secondary role silently grants everything back.
 
 ## Teardown
 
-```sql
-DROP SCHEMA IF EXISTS DEMO.GUARDANT_DEMO CASCADE;
-DROP WAREHOUSE IF EXISTS GUARDANT_DEMO_WH;
+```bash
+snow sql -c <connection> --role ACCOUNTADMIN -f setup/99_teardown.sql
 ```

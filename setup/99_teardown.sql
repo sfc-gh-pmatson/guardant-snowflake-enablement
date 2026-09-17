@@ -56,8 +56,8 @@ DROP ROLE         IF EXISTS GUARDANT_ANALYST;
 -- The dataset itself. Regenerates from setup/01_synthetic_data.sql in ~30s.
 DROP SCHEMA IF EXISTS DEMO.GUARDANT_DEMO CASCADE;
 
--- The hands-on lab rehearsal environment, if you stood it up
--- (lab/99_rehearsal_shortcut.sql)
+-- Left over from the facilitator's rehearsal environment. These will not exist
+-- in your account unless you created them yourself; the DROPs are harmless.
 DROP DATABASE  IF EXISTS GUARDANT_LAB;
 DROP WAREHOUSE IF EXISTS GUARDANT_LAB_WH;
 DROP ROLE      IF EXISTS GUARDANT_LAB;

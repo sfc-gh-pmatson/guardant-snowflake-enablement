@@ -46,7 +46,8 @@ CREATE COMPUTE POOL IF NOT EXISTS GUARDANT_NOTEBOOK_POOL
   AUTO_SUSPEND_SECS = 3600
   COMMENT = 'Pre-warmed pool for the Guardant session notebooks';
 
--- The throwaway pool is created DURING the session by demo.sql, not here.
+-- A second, throwaway pool was created live during the session to show the
+-- CREATE COMPUTE POOL round trip. It is not needed to stand this environment up.
 
 -- ---------------------------------------------------------------------
 -- 5. Snowflake-Labs git repository (segment 4). Read-only, public, so no
